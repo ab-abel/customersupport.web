@@ -1,21 +1,44 @@
 pipeline {
-    agent any
+  agent any
 
-    stages {
-        stage('Build') {
+    stages{
+        stage('Clean-up volumes') {
             steps {
-                sh 'echo we are Building at this stage..'
+                sh 'docker system prune -a --volumes -f'
             }
         }
-        stage('Test') {
+        stage('Build Container') {
             steps {
-                sh 'echo Testing is what we are.'
+                sh 'docker compose up -d --no-color --wait'
+                sh 'docker compose ps'
+            }
+
+        }
+        stage('Run tests against the container') {
+            steps {
+                sh 'curl http://localhost:3000/param?query=demo | jq'
             }
         }
-        stage('Deploy') {
+
+        stage('Deploy to Production') {
+            input{
+                message "Click OK! to deploy to Production?"
+                ok "OK"
+            }
             steps {
-                sh 'echo Deploying....'
+                sh 'ssh -o StrictHostKeyChecking=no deployment-user@52.203.249.167 "\
+                        cd mallet; \
+                        git pull origin master; \
+                        docker compose down --remove-orphans;\
+                        docker compose up; --no-warn-script-location; \
+                        sudo systemctl restart nginx "'
             }
         }
     }
-} 
+    post {
+        always {
+            sh 'docker compose down --remove-orphans -v'
+            sh 'docker compose ps'
+        }
+    }
+}
